@@ -1,3 +1,4 @@
-# Só o HTML precisa entrar no contexto de build
+# Só o HTML e a config do nginx precisam entrar no contexto de build
 *
 !lsm-simulator.html
+!default.conf
