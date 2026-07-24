@@ -1,0 +1,3 @@
+# Só o HTML precisa entrar no contexto de build
+*
+!lsm-simulator.html

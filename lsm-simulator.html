@@ -1,0 +1,1227 @@
+<title>LSM-Tree — Simulador de Storage & Retrieval</title>
+<style>
+  :root{
+    --bg:#eaeef4; --panel:#ffffff; --panel-2:#f6f8fc; --ink:#1a2231; --muted:#5c6a82;
+    --line:#d6dde9; --line-strong:#c2ccdb;
+    --mem:#c9741a; --mem-fill:#e8951f; --mem-soft:rgba(232,149,31,.10); --mem-line:rgba(232,149,31,.35);
+    --disk:#0d8686; --disk-fill:#12a3a3; --disk-soft:rgba(18,163,163,.09); --disk-line:rgba(18,163,163,.32);
+    --tomb:#d6455f; --tomb-soft:rgba(214,69,95,.12);
+    --good:#2f9e6f; --hit:#2f9e6f; --miss:#8a97ad;
+    --radius:10px; --maxw:1180px;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0c111d; --panel:#141b2b; --panel-2:#19212f; --ink:#e6ecf6; --muted:#93a1bd;
+      --line:#26314a; --line-strong:#31405d;
+      --mem:#f0aa54; --mem-fill:#f2a94b; --mem-soft:rgba(242,169,75,.10); --mem-line:rgba(242,169,75,.30);
+      --disk:#37cdcd; --disk-fill:#2bbdbd; --disk-soft:rgba(55,205,205,.09); --disk-line:rgba(55,205,205,.28);
+      --tomb:#ff7089; --tomb-soft:rgba(255,112,137,.14);
+      --good:#56d39a; --hit:#56d39a; --miss:#6b7893;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#eaeef4; --panel:#ffffff; --panel-2:#f6f8fc; --ink:#1a2231; --muted:#5c6a82;
+    --line:#d6dde9; --line-strong:#c2ccdb;
+    --mem:#c9741a; --mem-fill:#e8951f; --mem-soft:rgba(232,149,31,.10); --mem-line:rgba(232,149,31,.35);
+    --disk:#0d8686; --disk-fill:#12a3a3; --disk-soft:rgba(18,163,163,.09); --disk-line:rgba(18,163,163,.32);
+    --tomb:#d6455f; --tomb-soft:rgba(214,69,95,.12);
+    --good:#2f9e6f; --hit:#2f9e6f; --miss:#8a97ad;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0c111d; --panel:#141b2b; --panel-2:#19212f; --ink:#e6ecf6; --muted:#93a1bd;
+    --line:#26314a; --line-strong:#31405d;
+    --mem:#f0aa54; --mem-fill:#f2a94b; --mem-soft:rgba(242,169,75,.10); --mem-line:rgba(242,169,75,.30);
+    --disk:#37cdcd; --disk-fill:#2bbdbd; --disk-soft:rgba(55,205,205,.09); --disk-line:rgba(55,205,205,.28);
+    --tomb:#ff7089; --tomb-soft:rgba(255,112,137,.14);
+    --good:#56d39a; --hit:#56d39a; --miss:#6b7893;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;
+    -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:28px 20px 64px;}
+
+  /* ---------- header ---------- */
+  header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--disk);
+    font-weight:600;margin:0 0 8px;}
+  h1{font-family:var(--mono);font-size:clamp(22px,3.4vw,32px);font-weight:700;letter-spacing:-.01em;margin:0;
+    text-wrap:balance;}
+  .sub{color:var(--muted);font-size:14px;max-width:60ch;margin:8px 0 0;}
+  .book{font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);
+    border-radius:99px;padding:6px 12px;white-space:nowrap;}
+
+  /* ---------- console ---------- */
+  .console{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;
+    margin-bottom:20px;box-shadow:0 1px 2px rgba(10,20,40,.04);}
+  .cmd-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .field{display:flex;flex-direction:column;gap:3px;}
+  .field label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding-left:2px;}
+  input[type=text]{font-family:var(--mono);font-size:14px;background:var(--panel-2);color:var(--ink);
+    border:1px solid var(--line-strong);border-radius:7px;padding:9px 11px;width:150px;outline:none;transition:border-color .15s,box-shadow .15s;}
+  input[type=text]:focus{border-color:var(--disk-fill);box-shadow:0 0 0 3px var(--disk-soft);}
+  .btn{font-family:var(--mono);font-size:12.5px;font-weight:600;letter-spacing:.02em;cursor:pointer;
+    border:1px solid var(--line-strong);background:var(--panel-2);color:var(--ink);border-radius:7px;
+    padding:9px 14px;transition:transform .08s,background .15s,border-color .15s,opacity .15s;}
+  .btn:hover{transform:translateY(-1px);}
+  .btn:active{transform:translateY(0);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none;}
+  .btn.set{background:var(--disk-fill);border-color:var(--disk-fill);color:#fff;}
+  .btn.get{background:var(--ink);border-color:var(--ink);color:var(--panel);}
+  .btn.del{background:transparent;border-color:var(--tomb);color:var(--tomb);}
+  .btn.ghost{background:transparent;}
+  .spacer{flex:1 1 auto;min-width:8px;}
+  .toolbar-2{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-family:var(--mono);font-size:12px;color:var(--muted);}
+  .toolbar-2 .ctl{display:flex;align-items:center;gap:7px;}
+  .toolbar-2 input[type=range]{accent-color:var(--disk-fill);width:96px;}
+  .toolbar-2 input[type=checkbox]{accent-color:var(--disk-fill);width:15px;height:15px;}
+  .pill-count{color:var(--ink);font-weight:700;}
+  kbd{font-family:var(--mono);font-size:11px;background:var(--panel-2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:1px 5px;color:var(--muted);}
+
+  /* ---------- stage ---------- */
+  .stage{display:grid;grid-template-columns:minmax(0,1fr) 46px minmax(0,1.25fr);gap:0;align-items:stretch;}
+  @media (max-width:820px){.stage{grid-template-columns:1fr;gap:14px;} .flowcol{display:none;}}
+
+  .zone{border-radius:var(--radius);border:1px solid var(--line);padding:16px;}
+  .zone.mem{background:var(--mem-soft);border-color:var(--mem-line);}
+  .zone.disk{background:var(--disk-soft);border-color:var(--disk-line);}
+  .zone-head{display:flex;align-items:center;gap:9px;margin-bottom:4px;}
+  .zone-tag{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;
+    padding:3px 8px;border-radius:5px;}
+  .zone.mem .zone-tag{background:var(--mem-fill);color:#fff;}
+  .zone.disk .zone-tag{background:var(--disk-fill);color:#fff;}
+  .zone-head h2{font-family:var(--mono);font-size:14px;margin:0;font-weight:700;}
+  .zone-note{font-size:12px;color:var(--muted);margin:0 0 14px;}
+
+  .flowcol{display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:4px;}
+  .flowcol .arrow{font-size:22px;line-height:1;color:var(--mem-fill);}
+  .flowcol .flowlabel{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;writing-mode:vertical-rl;transform:rotate(180deg);color:var(--muted);}
+
+  .block{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px;}
+  .block:last-child{margin-bottom:0;}
+  .block-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:9px;}
+  .block-title{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.02em;}
+  .block-meta{font-family:var(--mono);font-size:10.5px;color:var(--muted);}
+
+  /* entries */
+  .rows{display:flex;flex-direction:column;gap:5px;min-height:24px;max-height:210px;overflow-y:auto;padding-right:2px;}
+  .empty{font-family:var(--mono);font-size:11.5px;color:var(--muted);font-style:italic;padding:4px 2px;}
+  .kv{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12.5px;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:6px;padding:5px 9px;transition:background .2s,border-color .2s,box-shadow .2s;}
+  .kv .k{color:var(--disk);font-weight:700;}
+  .kv .arrow2{color:var(--muted);}
+  .kv .v{color:var(--ink);}
+  .kv.tomb{background:var(--tomb-soft);border-color:var(--tomb);}
+  .kv.tomb .v{color:var(--tomb);text-decoration:line-through;}
+  .kv.tomb .tag{margin-left:auto;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--tomb);border:1px solid var(--tomb);border-radius:4px;padding:0 5px;}
+  .kv.scan{background:rgba(120,140,170,.16);border-color:var(--line-strong);}
+  .kv.hit{background:rgba(47,158,111,.16);border-color:var(--hit);box-shadow:0 0 0 2px rgba(47,158,111,.22);}
+
+  /* WAL */
+  .wal-rows{display:flex;flex-direction:column;gap:2px;font-family:var(--mono);font-size:11.5px;max-height:150px;overflow-y:auto;}
+  .wal-line{color:var(--muted);white-space:nowrap;}
+  .wal-line .op{font-weight:700;}
+  .wal-line .op.SET{color:var(--disk);}
+  .wal-line .op.DEL{color:var(--tomb);}
+  .wal-line .seq{opacity:.5;}
+
+  /* sstables */
+  .sst{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--panel);transition:box-shadow .2s,border-color .2s,opacity .3s,transform .3s;}
+  .sst.checking{border-color:var(--ink);box-shadow:0 0 0 2px rgba(120,140,170,.25);}
+  .sst.skipped{opacity:.42;}
+  .sst.hit{border-color:var(--hit);box-shadow:0 0 0 2px rgba(47,158,111,.3);}
+  .sst-head{display:flex;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap;}
+  .sst-id{font-family:var(--mono);font-size:11.5px;font-weight:700;}
+  .sst-badge{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:4px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);}
+  .sst-immutable{color:var(--disk);border-color:var(--disk-line);}
+
+  .level-band{margin-bottom:14px;}
+  .level-band:last-child{margin-bottom:0;}
+  .level-label{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 7px;display:flex;gap:8px;align-items:center;}
+  .level-label .ll-tag{color:var(--disk);font-weight:700;}
+  .sst-list{display:flex;flex-direction:column;gap:9px;}
+  .sst-empty{font-family:var(--mono);font-size:11.5px;color:var(--muted);font-style:italic;border:1px dashed var(--line-strong);border-radius:8px;padding:10px;text-align:center;}
+
+  /* bloom */
+  .bloom{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+  .bloom-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+  .bits{display:flex;gap:2px;flex-wrap:wrap;}
+  .bit{width:9px;height:9px;border-radius:2px;background:var(--panel-2);border:1px solid var(--line);transition:background .2s,box-shadow .2s,transform .2s;}
+  .bit.on{background:var(--disk-fill);border-color:var(--disk-fill);}
+  .bit.probe{box-shadow:0 0 0 2px var(--ink);transform:scale(1.35);z-index:2;}
+  .bit.probe.on{box-shadow:0 0 0 2px var(--hit);}
+
+  /* trace */
+  .lower{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px;}
+  @media (max-width:820px){.lower{grid-template-columns:1fr;}}
+  .trace{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;}
+  .trace h3,.notes h3{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 10px;color:var(--muted);}
+  .trace-log{font-family:var(--mono);font-size:12px;display:flex;flex-direction:column;gap:4px;max-height:260px;overflow-y:auto;}
+  .tl{padding:3px 0;border-bottom:1px dashed var(--line);color:var(--ink);}
+  .tl:last-child{border-bottom:0;}
+  .tl .t-icon{display:inline-block;width:16px;}
+  .tl.info{color:var(--muted);}
+  .tl.write{color:var(--disk);}
+  .tl.del{color:var(--tomb);}
+  .tl.flush{color:var(--mem);}
+  .tl.compact{color:var(--mem);}
+  .tl.hit{color:var(--hit);font-weight:700;}
+  .tl.miss{color:var(--muted);}
+  .tl.result{font-weight:700;}
+  .tl.fp{color:var(--tomb);}
+
+  .notes{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;}
+  .notes details{border-bottom:1px solid var(--line);padding:8px 0;}
+  .notes details:last-child{border-bottom:0;}
+  .notes summary{font-family:var(--mono);font-size:12.5px;font-weight:600;cursor:pointer;list-style:none;display:flex;gap:8px;align-items:center;color:var(--ink);}
+  .notes summary::-webkit-details-marker{display:none;}
+  .notes summary::before{content:"+";color:var(--disk);font-weight:700;width:12px;display:inline-block;}
+  .notes details[open] summary::before{content:"−";}
+  .notes p{font-size:13px;color:var(--muted);margin:8px 0 4px 20px;}
+  .notes code{font-family:var(--mono);font-size:12px;background:var(--panel-2);padding:1px 5px;border-radius:4px;color:var(--ink);}
+
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .legend .li{display:flex;align-items:center;gap:6px;}
+  .swatch{width:12px;height:12px;border-radius:3px;display:inline-block;border:1px solid var(--line-strong);}
+
+  /* ---------- tabs & views ---------- */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:22px;flex-wrap:wrap;}
+  .tab{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.01em;cursor:pointer;
+    background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);
+    padding:10px 16px;margin-bottom:-1px;transition:color .15s,border-color .15s;}
+  .tab:hover{color:var(--ink);}
+  .tab.active{color:var(--ink);border-bottom-color:var(--disk-fill);}
+  .view{display:block;}
+  .view.hidden{display:none;}
+  .view-head{margin-bottom:16px;}
+  .view-title{font-family:var(--mono);font-size:19px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em;}
+  .view-desc{color:var(--muted);font-size:13.5px;margin:0;max-width:78ch;}
+
+  /* ---------- B-Tree ---------- */
+  .bt-stage{background:var(--disk-soft);border:1px solid var(--disk-line);border-radius:var(--radius);padding:8px;margin-bottom:20px;}
+  .bt-canvas-wrap{overflow-x:auto;}
+  .bt-canvas{position:relative;margin:0 auto;min-height:220px;}
+  .bt-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;}
+  .bt-node{position:absolute;transform:translate(-50%,0);display:flex;background:var(--panel);
+    border:1px solid var(--line-strong);border-radius:7px;overflow:hidden;box-shadow:0 1px 3px rgba(10,20,40,.10);
+    transition:box-shadow .2s,border-color .2s,transform .2s;z-index:2;}
+  .bt-node.leaf{border-color:var(--disk-line);}
+  .bt-node.path{border-color:var(--ink);box-shadow:0 0 0 2px rgba(120,140,170,.3);}
+  .bt-node.hitnode{border-color:var(--hit);box-shadow:0 0 0 2px rgba(47,158,111,.35);}
+  .bt-node.splitting{border-color:var(--mem);box-shadow:0 0 0 2px var(--mem-line);}
+  .bt-cell{font-family:var(--mono);font-size:13px;font-weight:600;padding:8px 11px;border-right:1px solid var(--line);
+    color:var(--ink);font-variant-numeric:tabular-nums;min-width:30px;text-align:center;transition:background .2s,color .2s;}
+  .bt-cell:last-child{border-right:0;}
+  .bt-cell.hitkey{background:rgba(47,158,111,.18);color:var(--hit);}
+  .bt-cell.median{background:var(--mem-soft);color:var(--mem);}
+  .bt-line{stroke:var(--line-strong);stroke-width:1.5;fill:none;}
+
+  .bt-counters{display:flex;gap:10px;margin-top:14px;}
+  .counter{flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;text-align:center;}
+  .c-num{display:block;font-family:var(--mono);font-size:24px;font-weight:700;color:var(--disk);font-variant-numeric:tabular-nums;}
+  .c-lbl{display:block;font-size:10.5px;color:var(--muted);line-height:1.3;margin-top:3px;}
+
+  /* ---------- comparação ---------- */
+  .score{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px;}
+  @media (max-width:640px){.score{grid-template-columns:1fr;}}
+  .score-card{border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;background:var(--panel);}
+  .score-card.btree{border-top:3px solid var(--disk-fill);}
+  .score-card.lsm{border-top:3px solid var(--mem-fill);}
+  .score-tag{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;}
+  .score-card.btree .score-tag{color:var(--disk);}
+  .score-card.lsm .score-tag{color:var(--mem);}
+  .score-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:6px 0;border-top:1px dashed var(--line);font-size:12.5px;color:var(--muted);}
+  .score-row:first-of-type{border-top:0;}
+  .score-num{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;}
+  .score-note{font-size:11.5px;color:var(--muted);margin:6px 0 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .score-note .btn{padding:5px 10px;font-size:11px;}
+
+  .cmp-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);}
+  .cmp-table{border-collapse:collapse;width:100%;min-width:560px;font-size:13px;}
+  .cmp-table th,.cmp-table td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top;}
+  .cmp-table thead th{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--panel-2);}
+  .cmp-table thead th.c-bt{color:var(--disk);}
+  .cmp-table thead th.c-lsm{color:var(--mem);}
+  .cmp-table tbody tr:last-child td{border-bottom:0;}
+  .cmp-table td.dim{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap;}
+  .cmp-table td{color:var(--ink);}
+
+  /* ---------- linha × coluna (OLTP/OLAP) ---------- */
+  .cs-stage{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;}
+  @media (max-width:860px){.cs-stage{grid-template-columns:1fr;}}
+  .cs-panel{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:14px;display:flex;flex-direction:column;}
+  .cs-panel.row-store{border-top:3px solid var(--mem-fill);}
+  .cs-panel.col-store{border-top:3px solid var(--disk-fill);}
+  .cs-phead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:4px;flex-wrap:wrap;}
+  .cs-ptitle{font-family:var(--mono);font-size:12.5px;font-weight:700;}
+  .cs-panel.row-store .cs-ptitle{color:var(--mem);}
+  .cs-panel.col-store .cs-ptitle{color:var(--disk);}
+  .cs-count{font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .cs-count b{color:var(--ink);font-size:14px;}
+  .cs-pnote{font-size:11.5px;color:var(--muted);margin:0 0 12px;}
+
+  .cs-tape{display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;}
+  .cs-rowgroup{display:inline-flex;gap:2px;padding:3px;border:1px dashed var(--line);border-radius:6px;position:relative;}
+  .cs-rowtag{font-family:var(--mono);font-size:8.5px;color:var(--muted);position:absolute;top:-8px;left:4px;background:var(--panel);padding:0 3px;}
+
+  .cs-cols{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;}
+  .cs-colstrip{display:flex;flex-direction:column;gap:3px;flex:0 0 auto;}
+  .cs-colhead{font-family:var(--mono);font-size:10px;font-weight:700;text-align:center;padding:2px 0;color:var(--ink);}
+  .cs-badge{font-family:var(--mono);font-size:8px;letter-spacing:.02em;color:var(--good);border:1px solid var(--good);border-radius:4px;padding:1px 4px;margin-top:2px;white-space:nowrap;text-align:center;}
+  .cs-badge.none{color:var(--muted);border-color:var(--line-strong);}
+
+  .cs-cell{font-family:var(--mono);font-size:11px;padding:4px 6px;border-radius:4px;min-width:38px;text-align:center;
+    white-space:nowrap;color:var(--ink);transition:opacity .3s,box-shadow .2s,transform .2s;font-variant-numeric:tabular-nums;}
+  .cs-cell.dim{opacity:.18;}
+  .cs-cell.read{box-shadow:0 0 0 2px var(--hit);font-weight:700;z-index:2;}
+
+  .cs-verdict{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:20px;background:var(--panel-2);color:var(--muted);}
+  .cs-verdict b{color:var(--ink);}
+  .cs-verdict.win-row{border-color:var(--mem-line);}
+  .cs-verdict.win-col{border-color:var(--disk-line);}
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Storage &amp; Retrieval · motores de armazenamento</p>
+      <h1>Como um banco guarda &amp; acha dados</h1>
+      <p class="sub">Dois motores de armazenamento com o mesmo trabalho — indexar dados ordenados em disco — e trade-offs opostos de I/O. Manipule os dados, veja a estrutura reagir e compare os dois.</p>
+    </div>
+    <span class="book">Designing Data-Intensive Applications · cap. Storage &amp; Retrieval</span>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-view="lsm">LSM-Tree &amp; SSTables</button>
+    <button class="tab" data-view="btree">B-Tree</button>
+    <button class="tab" data-view="analytics">Linha × Coluna</button>
+    <button class="tab" data-view="compare">Comparação</button>
+  </nav>
+
+  <!-- ==================== VIEW: LSM ==================== -->
+  <section class="view" id="view-lsm">
+    <div class="view-head">
+      <h2 class="view-title">LSM-Tree &amp; SSTables</h2>
+      <p class="view-desc">Escrita <b>sequencial</b>: vai para a memtable em RAM e, quando ela enche, é despejada como uma SSTable imutável (<em>flush</em>); a <em>compaction</em> funde arquivos depois. A leitura consulta memtable + SSTables, com o Bloom filter evitando disco. Usado em <em>LevelDB, RocksDB, Cassandra, HBase</em>.</p>
+    </div>
+
+  <!-- console -->
+  <div class="console">
+    <div class="cmd-row">
+      <div class="field">
+        <label for="keyIn">chave</label>
+        <input type="text" id="keyIn" placeholder="user:42" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="valIn">valor</label>
+        <input type="text" id="valIn" placeholder="Alice" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn set" id="btnSet">SET</button>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn get" id="btnGet">GET</button>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn del" id="btnDel">DELETE</button>
+      </div>
+      <div class="spacer"></div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn ghost" id="btnFlush">⟱ Flush</button>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn ghost" id="btnCompact">⇉ Compactar</button>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn ghost" id="btnReset">↺ Reset</button>
+      </div>
+    </div>
+    <div class="toolbar-2">
+      <span class="ctl">memtable atual: <span class="pill-count" id="memCount">0</span></span>
+      <span class="ctl">
+        <label for="thresh">flush ao atingir</label>
+        <input type="range" id="thresh" min="2" max="8" value="4">
+        <span class="pill-count" id="threshVal">4</span> chaves
+      </span>
+      <span class="ctl"><input type="checkbox" id="autoCompact" checked><label for="autoCompact">auto-compaction (L0 ≥ 3 tabelas)</label></span>
+      <span class="ctl" style="margin-left:auto"><kbd>Enter</kbd> = SET · <kbd>?</kbd> após a chave = GET</span>
+    </div>
+  </div>
+
+  <!-- stage -->
+  <div class="stage">
+    <!-- MEMORY -->
+    <section class="zone mem" id="zoneMem">
+      <div class="zone-head">
+        <span class="zone-tag">RAM</span>
+        <h2>Memória — volátil</h2>
+      </div>
+      <p class="zone-note">Perde tudo se a máquina cair. Por isso toda escrita vai antes para o log em disco (WAL).</p>
+
+      <div class="block" id="walBlock">
+        <div class="block-head">
+          <span class="block-title">Write-Ahead Log (disco)</span>
+          <span class="block-meta" id="walMeta">append-only</span>
+        </div>
+        <div class="wal-rows" id="walRows"></div>
+      </div>
+
+      <div class="block" id="memBlock">
+        <div class="block-head">
+          <span class="block-title">Memtable</span>
+          <span class="block-meta">árvore ordenada em RAM</span>
+        </div>
+        <div class="rows" id="memRows"></div>
+      </div>
+    </section>
+
+    <div class="flowcol">
+      <span class="arrow">⟱</span>
+      <span class="flowlabel">flush</span>
+    </div>
+
+    <!-- DISK -->
+    <section class="zone disk" id="zoneDisk">
+      <div class="zone-head">
+        <span class="zone-tag">DISK</span>
+        <h2>Disco — SSTables imutáveis</h2>
+        <span class="block-meta" id="diskStat" style="margin-left:auto"></span>
+      </div>
+      <p class="zone-note">Sorted String Tables: pares ordenados por chave, nunca reescritos. Cada leitura consulta as mais novas primeiro.</p>
+      <div id="levels"></div>
+    </section>
+  </div>
+
+  <!-- lower -->
+  <div class="lower">
+    <div class="trace">
+      <h3>Trace de execução</h3>
+      <div class="trace-log" id="traceLog"></div>
+    </div>
+    <div class="notes">
+      <h3>Conceitos do capítulo</h3>
+      <details open>
+        <summary>Por que escrever é rápido?</summary>
+        <p>Escritas viram um <em>append</em> sequencial: primeiro no <code>WAL</code> (durabilidade), depois na <em>memtable</em> em RAM. Nada é procurado nem sobrescrito em disco — só quando a memtable enche é que ela é despejada de uma vez (<em>flush</em>) como uma SSTable ordenada.</p>
+      </details>
+      <details>
+        <summary>O que é uma SSTable?</summary>
+        <p>Um arquivo com os pares <code>chave→valor</code> <em>ordenados por chave</em> e <em>imutável</em>. Ordenado permite merge eficiente e um índice esparso; imutável evita escrita aleatória em disco.</p>
+      </details>
+      <details>
+        <summary>Compaction: por que juntar arquivos?</summary>
+        <p>Updates e deletes não apagam nada na hora — só empilham versões novas. A <em>compaction</em> funde SSTables mantendo o valor mais recente de cada chave e descartando <em>tombstones</em>, recuperando espaço e reduzindo o nº de arquivos que uma leitura precisa varrer.</p>
+      </details>
+      <details>
+        <summary>Tombstone (o registro de exclusão)</summary>
+        <p>Um <code>DELETE</code> grava um marcador especial. Ele "esconde" versões antigas da chave nas SSTables mais velhas até que a compaction o elimine de vez.</p>
+      </details>
+      <details>
+        <summary>Bloom filter: pular disco</summary>
+        <p>Estrutura probabilística por SSTable. Responde <em>"talvez esteja aqui"</em> ou <em>"com certeza não está"</em>. O "não" evita ler o disco à toa. Pode dar falso positivo (varre e não acha), nunca falso negativo. Observe os bits acendendo na leitura.</p>
+      </details>
+      <div class="legend">
+        <span class="li"><span class="swatch" style="background:var(--mem-fill)"></span>memória</span>
+        <span class="li"><span class="swatch" style="background:var(--disk-fill)"></span>disco / SSTable</span>
+        <span class="li"><span class="swatch" style="background:var(--tomb)"></span>tombstone</span>
+        <span class="li"><span class="swatch" style="background:var(--hit)"></span>hit da leitura</span>
+      </div>
+    </div>
+  </div>
+  </section><!-- /view-lsm -->
+
+  <!-- ==================== VIEW: B-TREE ==================== -->
+  <section class="view hidden" id="view-btree">
+    <div class="view-head">
+      <h2 class="view-title">B-Tree</h2>
+      <p class="view-desc">Páginas de tamanho fixo, mantidas <b>ordenadas e balanceadas</b>. A escrita é <b>in-place</b>: a página é reescrita no mesmo lugar do disco (I/O aleatório) e, se lotar, <em>divide</em> (split) — a chave do meio sobe para o pai, e a árvore pode crescer em altura. Usado em <em>PostgreSQL, MySQL/InnoDB, SQLite, Oracle</em>.</p>
+    </div>
+
+    <div class="console">
+      <div class="cmd-row">
+        <div class="field"><label for="btKey">chave</label><input type="text" id="btKey" placeholder="42" autocomplete="off" spellcheck="false" inputmode="numeric"></div>
+        <div class="field"><label>&nbsp;</label><button class="btn set" id="btInsert">INSERT</button></div>
+        <div class="field"><label>&nbsp;</label><button class="btn get" id="btSearch">SEARCH</button></div>
+        <div class="spacer"></div>
+        <div class="field"><label>&nbsp;</label><button class="btn ghost" id="btRandom">+ 8 aleatórias</button></div>
+        <div class="field"><label>&nbsp;</label><button class="btn ghost" id="btResetBtn">↺ Reset</button></div>
+      </div>
+      <div class="toolbar-2">
+        <span class="ctl"><label for="btOrder">máx. chaves por página</label><input type="range" id="btOrder" min="2" max="5" value="3"><span class="pill-count" id="btOrderVal">3</span></span>
+        <span class="ctl">altura: <span class="pill-count" id="btHeight">1</span></span>
+        <span class="ctl">páginas: <span class="pill-count" id="btPages">1</span></span>
+        <span class="ctl" style="margin-left:auto"><kbd>Enter</kbd> = INSERT</span>
+      </div>
+    </div>
+
+    <div class="bt-stage">
+      <div class="bt-canvas-wrap"><div class="bt-canvas" id="btCanvas"></div></div>
+    </div>
+
+    <div class="lower">
+      <div class="trace">
+        <h3>Trace de execução</h3>
+        <div class="trace-log" id="btTrace"></div>
+      </div>
+      <div class="notes">
+        <h3>Conceitos do capítulo</h3>
+        <details open>
+          <summary>Escrita in-place (I/O aleatório)</summary>
+          <p>Diferente do LSM (só <em>append</em>), o B-Tree sobrescreve a página existente no disco. Isso exige buscar a posição certa e reescrever o bloco inteiro — I/O aleatório, mais caro em disco rotativo e desgastante em SSD.</p>
+        </details>
+        <details>
+          <summary>Split de página</summary>
+          <p>Quando uma página passa do limite de chaves, ela se divide em duas e a <b>chave do meio</b> sobe para o pai. Se o pai também lotar, o split se propaga — podendo criar uma nova raiz e aumentar a altura da árvore.</p>
+        </details>
+        <details>
+          <summary>Leitura previsível</summary>
+          <p>Toda busca percorre um único caminho da raiz até a folha: exatamente <b>altura</b> páginas lidas. Com fator de ramificação alto, poucos níveis cobrem bilhões de chaves — 3 a 4 saltos bastam.</p>
+        </details>
+        <details>
+          <summary>WAL / redo log</summary>
+          <p>Como um split toca várias páginas, uma queda no meio corromperia a árvore. O B-Tree também usa um log write-ahead: grava a operação antes de mexer nas páginas, garantindo recuperação após falha.</p>
+        </details>
+        <div class="bt-counters">
+          <div class="counter"><span class="c-num" id="btWrites">0</span><span class="c-lbl">páginas reescritas<br>(amplificação de escrita)</span></div>
+          <div class="counter"><span class="c-num" id="btReads">0</span><span class="c-lbl">páginas lidas<br>(última busca)</span></div>
+        </div>
+      </div>
+    </div>
+  </section><!-- /view-btree -->
+
+  <!-- ==================== VIEW: COMPARAÇÃO ==================== -->
+  <section class="view hidden" id="view-compare">
+    <div class="view-head">
+      <h2 class="view-title">B-Tree × LSM-Tree</h2>
+      <p class="view-desc">O ponto central do capítulo: os dois indexam dados ordenados, mas fazem trade-offs opostos de I/O. Os números abaixo vêm do que você fez nas outras duas abas — insira dados lá e volte aqui.</p>
+    </div>
+
+    <div class="score">
+      <div class="score-card btree">
+        <div class="score-tag">B-Tree</div>
+        <div class="score-row"><span>chaves inseridas</span><span class="score-num" id="cmpBtKeys">0</span></div>
+        <div class="score-row"><span>páginas reescritas em disco</span><span class="score-num" id="cmpBtWrites">0</span></div>
+        <div class="score-row"><span>amplificação de escrita *</span><span class="score-num" id="cmpBtAmp">—</span></div>
+      </div>
+      <div class="score-card lsm">
+        <div class="score-tag">LSM-Tree</div>
+        <div class="score-row"><span>escritas lógicas (SET / DELETE)</span><span class="score-num" id="cmpLsmOps">0</span></div>
+        <div class="score-row"><span>registros gravados (WAL + flush + compaction)</span><span class="score-num" id="cmpLsmWrites">0</span></div>
+        <div class="score-row"><span>amplificação de escrita *</span><span class="score-num" id="cmpLsmAmp">—</span></div>
+      </div>
+    </div>
+    <p class="score-note">* amplificação ≈ trabalho físico de escrita ÷ escritas lógicas. Aproximação didática (conta registros/páginas, não bytes). <button class="btn ghost" id="cmpRefresh">↻ atualizar números</button></p>
+
+    <div class="cmp-table-wrap">
+      <table class="cmp-table">
+        <thead><tr><th>Dimensão</th><th class="c-bt">B-Tree</th><th class="c-lsm">LSM-Tree</th></tr></thead>
+        <tbody>
+          <tr><td class="dim">Padrão de escrita</td><td>In-place: reescreve a página (I/O aleatório).</td><td>Append sequencial na memtable/WAL; compaction depois.</td></tr>
+          <tr><td class="dim">Amplificação de escrita</td><td>1 escrita → reescreve a página inteira (+ splits + WAL).</td><td>Dados reescritos a cada nível de compaction.</td></tr>
+          <tr><td class="dim">Leitura</td><td>1 caminho raiz→folha: nº de saltos = altura. Previsível.</td><td>Checa memtable + várias SSTables; Bloom filter reduz o disco.</td></tr>
+          <tr><td class="dim">Throughput</td><td>Geralmente melhor para leitura.</td><td>Geralmente maior para escrita (sequencial).</td></tr>
+          <tr><td class="dim">Espaço em disco</td><td>Fragmentação: páginas ficam parcialmente vazias.</td><td>Melhor compressão; versões antigas ocupam espaço até compactar.</td></tr>
+          <tr><td class="dim">Cada chave existe…</td><td>…em exatamente um lugar na árvore.</td><td>…possivelmente em vários segmentos (a mais nova vence).</td></tr>
+          <tr><td class="dim">Concorrência</td><td>Latches nas páginas durante a escrita.</td><td>Escritas não bloqueiam leituras (arquivos imutáveis).</td></tr>
+          <tr><td class="dim">Maturidade</td><td>Décadas; padrão em bancos relacionais.</td><td>Mais recente; comum em NoSQL e engines modernas.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section><!-- /view-compare -->
+
+  <!-- ==================== VIEW: LINHA × COLUNA ==================== -->
+  <section class="view hidden" id="view-analytics">
+    <div class="view-head">
+      <h2 class="view-title">Armazenamento por linha × por coluna</h2>
+      <p class="view-desc">A mesma tabela, dois arranjos físicos em disco. No <b>row-oriented</b> (OLTP) os valores de um registro ficam juntos; no <b>column-oriented</b> (OLAP) os valores de uma mesma coluna ficam juntos. Rode as consultas e veja quais células cada arranjo precisa ler.</p>
+    </div>
+
+    <div class="console">
+      <div class="cmd-row">
+        <div class="field"><label>consulta pontual (OLTP)</label><button class="btn set" id="anOltp">SELECT * do pedido #7</button></div>
+        <div class="field"><label>consulta analítica (OLAP)</label><button class="btn get" id="anOlap">receita por produto</button></div>
+        <div class="spacer"></div>
+        <div class="field"><label>&nbsp;</label><button class="btn ghost" id="anClear">↺ limpar</button></div>
+      </div>
+    </div>
+
+    <div class="cs-verdict" id="anVerdict">Escolha uma consulta acima. <b>OLTP</b> = pega/atualiza um registro inteiro. <b>OLAP</b> = agrega poucas colunas sobre milhões de linhas.</div>
+
+    <div class="cs-stage">
+      <div class="cs-panel row-store">
+        <div class="cs-phead">
+          <span class="cs-ptitle">▤ Por LINHA (row-oriented)</span>
+          <span class="cs-count" id="csRowCount">células lidas: <b>—</b></span>
+        </div>
+        <p class="cs-pnote">Cada registro é um bloco contíguo. Ótimo para pegar 1 pedido inteiro; ruim para varrer 1 coluna (tem que atravessar tudo).</p>
+        <div class="cs-tape" id="rowTape"></div>
+      </div>
+      <div class="cs-panel col-store">
+        <div class="cs-phead">
+          <span class="cs-ptitle">▥ Por COLUNA (column-oriented)</span>
+          <span class="cs-count" id="csColCount">células lidas: <b>—</b></span>
+        </div>
+        <p class="cs-pnote">Cada coluna é um bloco contíguo. Lê só as colunas da consulta e comprime muito bem (valores repetidos).</p>
+        <div class="cs-cols" id="colStrips"></div>
+      </div>
+    </div>
+
+    <div class="notes" style="margin-bottom:20px">
+      <h3>Conceitos do capítulo</h3>
+      <details open>
+        <summary>OLTP × OLAP</summary>
+        <p><b>OLTP</b> (transações): muitas consultas pequenas, cada uma toca poucos registros <em>inteiros</em> por chave. <b>OLAP</b> (analytics): poucas consultas que varrem <em>milhões de linhas</em> mas só algumas colunas (somas, médias, group by).</p>
+      </details>
+      <details>
+        <summary>Por que colunas leem menos em analytics</summary>
+        <p>Uma consulta analítica costuma usar 2–3 colunas de uma tabela com dezenas. No arranjo por coluna, o motor lê só esses blocos; no arranjo por linha, precisa ler linhas inteiras (todas as colunas) para depois descartar o que não interessa.</p>
+      </details>
+      <details>
+        <summary>Compressão de colunas</summary>
+        <p>Valores de uma mesma coluna são parecidos e repetitivos (poucos produtos, poucas regiões). Isso comprime muito — <em>run-length encoding</em>, bitmaps, dicionário. Veja os selos de compressão nas colunas de baixa cardinalidade.</p>
+      </details>
+      <details>
+        <summary>O preço do arranjo por coluna</summary>
+        <p>Escrever/atualizar um único registro fica caro: os campos dele estão espalhados por vários blocos de coluna. Por isso OLAP normalmente carrega dados em lote e não faz updates ponto-a-ponto como o OLTP.</p>
+      </details>
+    </div>
+  </section><!-- /view-analytics -->
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const $=id=>document.getElementById(id);
+  const reduce=window.matchMedia("(prefers-reduced-motion:reduce)").matches;
+  const sleep=ms=>new Promise(r=>setTimeout(r,reduce?0:ms));
+
+  // ---------- Bloom filter (real; dimensionado pela qtd de chaves da tabela) ----------
+  // ~8 bits por chave, k=4 → taxa de falso positivo baixa mas ainda visível.
+  function bloomParams(n){ return {m:Math.min(160,Math.max(16,n*8)),k:4}; }
+  function bloomHashes(key,m,k){
+    let h1=2166136261>>>0;
+    for(let i=0;i<key.length;i++){ h1^=key.charCodeAt(i); h1=Math.imul(h1,16777619)>>>0; }
+    let h2=5381>>>0;
+    for(let i=0;i<key.length;i++){ h2=(((h2<<5)+h2)+key.charCodeAt(i))>>>0; }
+    if(h2%m===0) h2++;
+    const idx=[];
+    for(let i=0;i<k;i++) idx.push(((h1+Math.imul(i,h2))>>>0)%m);
+    return idx;
+  }
+  function buildBloom(keys){
+    const {m,k}=bloomParams(keys.length);
+    const bits=new Array(m).fill(false);
+    keys.forEach(key=>bloomHashes(key,m,k).forEach(b=>bits[b]=true));
+    return {bits,m,k};
+  }
+  const bloomMaybe=(bf,key)=>bloomHashes(key,bf.m,bf.k).every(b=>bf.bits[b]);
+
+  // ---------- estado ----------
+  let state;
+  function fresh(){
+    return { memtable:new Map(), wal:[], sstables:[], seq:0, version:0, sstId:0, busy:false,
+             logicalOps:0, physWrites:0 };
+  }
+
+  // ---------- render ----------
+  function renderWal(){
+    const el=$("walRows");
+    if(state.wal.length===0){ el.innerHTML='<div class="empty">— vazio —</div>'; }
+    else{
+      el.innerHTML=state.wal.map(w=>
+        `<div class="wal-line"><span class="seq">#${String(w.seq).padStart(2,"0")}</span> `+
+        `<span class="op ${w.op}">${w.op}</span> ${esc(w.key)}`+
+        (w.op==="SET"?` = ${esc(w.value)}`:"")+`</div>`).join("");
+    }
+    $("walMeta").textContent=state.wal.length+" registros · append-only";
+    el.scrollTop=el.scrollHeight;
+  }
+  function renderMem(){
+    const el=$("memRows");
+    const keys=[...state.memtable.keys()].sort();
+    if(keys.length===0){ el.innerHTML='<div class="empty">— vazia —</div>'; }
+    else{
+      el.innerHTML=keys.map(k=>{
+        const e=state.memtable.get(k);
+        return kvHTML(k,e,"mem-"+cssKey(k));
+      }).join("");
+    }
+    $("memCount").textContent=state.memtable.size;
+  }
+  function renderLevels(){
+    const el=$("levels");
+    const byLevel={};
+    state.sstables.forEach(s=>{ (byLevel[s.level]=byLevel[s.level]||[]).push(s); });
+    const levels=Object.keys(byLevel).map(Number).sort((a,b)=>a-b);
+    const shown=levels.length?levels:[0];
+    el.innerHTML=shown.map(L=>{
+      const list=(byLevel[L]||[]).slice().sort((a,b)=>b.version-a.version); // mais nova primeiro
+      const tag=L===0?"recém-descarregadas":"compactadas";
+      const inner=list.length? list.map(sstHTML).join("")
+        : `<div class="sst-empty">sem SSTables neste nível</div>`;
+      return `<div class="level-band">
+        <p class="level-label"><span class="ll-tag">L${L}</span> ${tag} · ${list.length} tabela(s)</p>
+        <div class="sst-list">${inner}</div></div>`;
+    }).join("");
+    const total=state.sstables.reduce((n,s)=>n+s.entries.length,0);
+    const ds=$("diskStat"); if(ds) ds.textContent=`${state.sstables.length} SSTables · ${total} chaves em disco`;
+  }
+  function sstHTML(s){
+    const fill=Math.round(100*s.bloom.bits.filter(Boolean).length/s.bloom.m);
+    const bits=s.bloom.bits.map((on,i)=>`<span class="bit ${on?"on":""}" data-sst="${s.id}" data-bit="${i}"></span>`).join("");
+    const rows=s.entries.map(e=>kvHTML(e.key,e,`sst${s.id}-${cssKey(e.key)}`)).join("");
+    const first=s.entries.length?s.entries[0].key:"—";
+    const last=s.entries.length?s.entries[s.entries.length-1].key:"—";
+    return `<div class="sst" id="sst-${s.id}" data-version="${s.version}">
+      <div class="sst-head">
+        <span class="sst-id">SSTable #${s.id}</span>
+        <span class="sst-badge sst-immutable">imutável</span>
+        <span class="sst-badge">${s.entries.length} chaves · v${s.version}</span>
+        <span class="sst-badge">range ${esc(first)} … ${esc(last)}</span>
+      </div>
+      <div class="bloom">
+        <span class="bloom-label">bloom · ${fill}% cheio</span>
+        <div class="bits" id="bits-${s.id}">${bits}</div>
+      </div>
+      <div class="rows">${rows}</div>
+    </div>`;
+  }
+  function kvHTML(k,e,domId){
+    if(e.deleted){
+      return `<div class="kv tomb" id="${domId}"><span class="k">${esc(k)}</span>`+
+             `<span class="arrow2">→</span><span class="v">apagado</span><span class="tag">tombstone</span></div>`;
+    }
+    return `<div class="kv" id="${domId}"><span class="k">${esc(k)}</span>`+
+           `<span class="arrow2">→</span><span class="v">${esc(e.value)}</span></div>`;
+  }
+  function renderAll(){ renderWal(); renderMem(); renderLevels(); syncButtons(); }
+  const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const cssKey=k=>String(k).replace(/[^a-zA-Z0-9]/g,"_");
+
+  // ---------- trace ----------
+  function trace(msg,cls){
+    const el=$("traceLog");
+    const icons={write:"✎",del:"✂",flush:"⟱",compact:"⇉",hit:"✔",miss:"·",result:"»",info:"ℹ",fp:"⚠"};
+    const div=document.createElement("div");
+    div.className="tl "+(cls||"info");
+    div.innerHTML=`<span class="t-icon">${icons[cls]||"·"}</span> ${msg}`;
+    el.appendChild(div);
+    el.scrollTop=el.scrollHeight;
+  }
+  function clearTrace(){ $("traceLog").innerHTML=""; }
+
+  // ---------- operações ----------
+  function syncButtons(){
+    $("btnFlush").disabled=state.busy||state.memtable.size===0;
+    $("btnCompact").disabled=state.busy||state.sstables.length<1;
+    ["btnSet","btnGet","btnDel","btnReset"].forEach(id=>$(id).disabled=state.busy);
+  }
+
+  async function doSet(){
+    const k=$("keyIn").value.trim(); const v=$("valIn").value.trim();
+    if(!k){ shake("keyIn"); return; }
+    if(!v){ shake("valIn"); return; }
+    state.seq++; state.logicalOps++; state.physWrites++; // 1 append no WAL
+    state.wal.push({seq:state.seq,op:"SET",key:k,value:v});
+    state.memtable.set(k,{value:v,deleted:false});
+    trace(`SET <b>${esc(k)}</b> = ${esc(v)} → WAL (#${state.seq}) + memtable`,"write");
+    renderAll();
+    $("valIn").value="";
+    await maybeFlush();
+  }
+  async function doDelete(){
+    const k=$("keyIn").value.trim();
+    if(!k){ shake("keyIn"); return; }
+    state.seq++; state.logicalOps++; state.physWrites++; // 1 append no WAL
+    state.wal.push({seq:state.seq,op:"DEL",key:k});
+    state.memtable.set(k,{value:null,deleted:true});
+    trace(`DELETE <b>${esc(k)}</b> → grava <em>tombstone</em> (nada é apagado ainda)`,"del");
+    renderAll();
+    await maybeFlush();
+  }
+
+  async function maybeFlush(){
+    const thr=+$("thresh").value;
+    if(state.memtable.size>=thr){
+      trace(`memtable atingiu ${state.memtable.size}/${thr} → flush automático`,"info");
+      await flush();
+    }
+  }
+
+  async function flush(){
+    if(state.memtable.size===0) return;
+    state.busy=true; syncButtons();
+    const keys=[...state.memtable.keys()].sort();
+    const entries=keys.map(k=>{ const e=state.memtable.get(k); return {key:k,value:e.value,deleted:e.deleted}; });
+    state.version++; state.sstId++;
+    state.physWrites+=entries.length; // reescreve todas as chaves em disco
+    const sst={id:state.sstId,level:0,version:state.version,entries,bloom:buildBloom(keys)};
+
+    // animação: memtable "desce" para o disco
+    $("zoneMem").animate?[0]:0;
+    trace(`FLUSH: memtable (${keys.length} chaves) → SSTable #${sst.id} ordenada e imutável em L0`,"flush");
+    state.sstables.push(sst);
+    state.memtable=new Map();
+    // WAL cujos dados já estão em SSTable pode ser descartado
+    state.wal=[];
+    renderAll();
+    const node=$("sst-"+sst.id);
+    if(node){ node.classList.add("hit"); await sleep(450); node.classList.remove("hit"); }
+    else await sleep(300);
+    state.busy=false; syncButtons();
+
+    if($("autoCompact").checked){
+      const l0=state.sstables.filter(s=>s.level===0).length;
+      if(l0>=3){ trace(`L0 chegou a ${l0} tabelas → compaction automática`,"info"); await compact(); }
+    }
+  }
+
+  async function compact(){
+    if(state.sstables.length<1) return;
+    state.busy=true; syncButtons();
+    const all=state.sstables.slice().sort((a,b)=> a.level-b.level || b.version-a.version); // precedência de leitura
+    // marca visualmente
+    all.forEach(s=>{ const n=$("sst-"+s.id); if(n) n.classList.add("checking"); });
+    await sleep(500);
+
+    const seen=new Map(); // primeira vez vista = versão mais nova
+    all.forEach(s=>s.entries.forEach(e=>{ if(!seen.has(e.key)) seen.set(e.key,e); }));
+    let dropped=0,tombs=0;
+    const merged=[];
+    seen.forEach((e,k)=>{ if(e.deleted){ tombs++; } else merged.push({key:k,value:e.value,deleted:false}); });
+    merged.sort((a,b)=>a.key<b.key?-1:1);
+    const before=all.reduce((n,s)=>n+s.entries.length,0);
+    dropped=before-merged.length;
+
+    const targetLevel=Math.max(1,...all.map(s=>s.level))===0?1:Math.max(1,...all.map(s=>s.level));
+    state.version++; state.sstId++;
+    state.physWrites+=merged.length; // compaction reescreve os dados de novo
+    const sst={id:state.sstId,level:targetLevel,version:state.version,entries:merged,bloom:buildBloom(merged.map(e=>e.key))};
+    state.sstables=[sst];
+    trace(`COMPACTION: fundiu ${all.length} tabelas (${before} registros) → SSTable #${sst.id} em L${targetLevel} com ${merged.length} chaves. Removidos ${dropped} obsoletos (${tombs} tombstone(s)).`,"compact");
+    renderAll();
+    const node=$("sst-"+sst.id);
+    if(node){ node.classList.add("hit"); await sleep(500); node.classList.remove("hit"); }
+    state.busy=false; syncButtons();
+  }
+
+  // ---------- leitura (o coração didático) ----------
+  async function doGet(){
+    const k=$("keyIn").value.trim();
+    if(!k){ shake("keyIn"); return; }
+    state.busy=true; syncButtons();
+    clearTrace();
+    trace(`GET <b>${esc(k)}</b> — caminho de leitura: memtable → SSTables (mais novas primeiro)`,"info");
+
+    // 1) memtable
+    highlightMem(k,"scan"); await sleep(500);
+    if(state.memtable.has(k)){
+      const e=state.memtable.get(k);
+      highlightMem(k,"hit"); await sleep(200);
+      if(e.deleted){ trace(`memtable: encontrou <em>tombstone</em> → resultado: <b>NÃO EXISTE</b>`,"del"); result(k,null,true); }
+      else { trace(`memtable: <b>HIT</b> na RAM (0 leituras de disco!)`,"hit"); result(k,e.value,false); }
+      await sleep(300); clearMemHi(); state.busy=false; syncButtons(); return;
+    }
+    trace(`memtable: miss → vai ao disco`,"miss"); clearMemHi();
+
+    // 2) SSTables: nível mais baixo primeiro (L0 é o mais novo), depois por recência
+    const ordered=state.sstables.slice().sort((a,b)=> a.level-b.level || b.version-a.version);
+    let diskReads=0, skipped=0;
+    for(const s of ordered){
+      const node=$("sst-"+s.id);
+      // bloom probe
+      const probes=bloomHashes(k,s.bloom.m,s.bloom.k);
+      probes.forEach(i=>{ const b=document.querySelector(`.bit[data-sst="${s.id}"][data-bit="${i}"]`); if(b) b.classList.add("probe"); });
+      if(node) node.classList.add("checking");
+      await sleep(480);
+      const maybe=bloomMaybe(s.bloom,k);
+      probes.forEach(i=>{ const b=document.querySelector(`.bit[data-sst="${s.id}"][data-bit="${i}"]`); if(b) b.classList.remove("probe"); });
+
+      if(!maybe){
+        skipped++;
+        trace(`SSTable #${s.id}: bloom diz <b>"com certeza não"</b> → pula (economiza leitura de disco)`,"miss");
+        if(node){ node.classList.remove("checking"); node.classList.add("skipped"); }
+        await sleep(220);
+        continue;
+      }
+      // bloom diz "talvez" → lê disco e varre
+      diskReads++;
+      trace(`SSTable #${s.id}: bloom diz <b>"talvez"</b> → lê do disco e varre`,"info");
+      const hit=s.entries.find(e=>e.key===k);
+      if(hit){
+        highlightSstRow(s.id,k,"hit");
+        if(node){ node.classList.remove("checking"); node.classList.add("hit"); }
+        await sleep(300);
+        if(hit.deleted){ trace(`SSTable #${s.id}: achou <em>tombstone</em> → resultado: <b>NÃO EXISTE</b>`,"del"); result(k,null,true,diskReads,skipped); }
+        else { trace(`SSTable #${s.id}: <b>HIT</b> → para a busca aqui (versão mais nova ganha)`,"hit"); result(k,hit.value,false,diskReads,skipped); }
+        await sleep(200); clearReadHi(); state.busy=false; syncButtons(); return;
+      } else {
+        trace(`SSTable #${s.id}: bloom errou — a chave não estava lá (<b>falso positivo</b>, leitura desperdiçada)`,"fp");
+        if(node){ node.classList.remove("checking"); node.classList.add("skipped"); }
+        await sleep(220);
+      }
+    }
+    trace(`percorreu todas as SSTables · ${diskReads} leitura(s) de disco, ${skipped} pulada(s) pelo bloom`,"info");
+    result(k,null,true,diskReads,skipped);
+    await sleep(150); clearReadHi(); state.busy=false; syncButtons();
+  }
+  function result(k,val,notFound,dr,sk){
+    const extra=(dr!==undefined)?` · ${dr} leitura(s) de disco, ${sk} pulada(s) pelo bloom`:"";
+    if(notFound) trace(`RESULTADO: <b>${esc(k)}</b> → NÃO EXISTE${extra}`,"result");
+    else trace(`RESULTADO: <b>${esc(k)}</b> → <b>${esc(val)}</b>${extra}`,"result");
+  }
+
+  // ---------- highlight helpers ----------
+  function highlightMem(k,cls){ const n=$("mem-"+cssKey(k)); if(n) n.classList.add(cls); }
+  function clearMemHi(){ document.querySelectorAll("#memRows .kv").forEach(n=>n.classList.remove("scan","hit")); }
+  function highlightSstRow(id,k,cls){ const n=$(`sst${id}-${cssKey(k)}`); if(n) n.classList.add(cls); }
+  function clearReadHi(){
+    document.querySelectorAll(".sst").forEach(n=>n.classList.remove("checking","skipped","hit"));
+    document.querySelectorAll(".kv").forEach(n=>n.classList.remove("scan","hit"));
+    document.querySelectorAll(".bit").forEach(b=>b.classList.remove("probe"));
+  }
+
+  function shake(id){
+    const el=$(id);
+    el.style.borderColor="var(--tomb)";
+    el.animate?el.animate([{transform:"translateX(0)"},{transform:"translateX(-5px)"},{transform:"translateX(5px)"},{transform:"translateX(0)"}],{duration:reduce?0:220}):0;
+    setTimeout(()=>{el.style.borderColor="";},400);
+    el.focus();
+  }
+
+  // ---------- seed: base grande e realista ----------
+  const NAMES=["Ada","Bruno","Carol","Dan","Eva","Frank","Gina","Hugo","Ivo","Joana",
+               "Kai","Lia","Mauro","Nara","Otto","Paula","Rui","Sofia","Théo","Uli",
+               "Vera","Xico","Yuri","Zoe"];
+  const pad3=n=>String(n).padStart(3,"0");
+  const uk=n=>"user:"+pad3(n);
+  const nm=n=>NAMES[(n-1)%NAMES.length];
+
+  function makeSst(id,level,version,entries){
+    entries.sort((a,b)=>a.key<b.key?-1:1);
+    return {id,level,version,entries,bloom:buildBloom(entries.map(e=>e.key))};
+  }
+
+  function seed(){
+    state=fresh();
+
+    // L1 — base já consolidada por compaction (dados mais antigos): user:001..020
+    const l1=[]; for(let n=1;n<=20;n++) l1.push({key:uk(n),value:nm(n),deleted:false});
+
+    // L0 tabela #2 (mais nova que L1): inserções 021..028 + ATUALIZAÇÃO de user:005
+    const a=[]; for(let n=21;n<=28;n++) a.push({key:uk(n),value:nm(n),deleted:false});
+    a.push({key:uk(5),value:nm(5)+" (atualizado)",deleted:false});
+
+    // L0 tabela #3 (a mais nova em disco): 029..034 + TOMBSTONE user:012 + update user:001
+    const b=[]; for(let n=29;n<=34;n++) b.push({key:uk(n),value:nm(n),deleted:false});
+    b.push({key:uk(12),value:null,deleted:true});
+    b.push({key:uk(1),value:nm(1)+" (atualizado)",deleted:false});
+
+    state.sstables=[ makeSst(1,1,1,l1), makeSst(2,0,2,a), makeSst(3,0,3,b) ];
+    state.sstId=3; state.version=3;
+
+    // Memtable — escritas mais recentes de todas (ainda em RAM, ainda no WAL)
+    state.memtable.set(uk(35),{value:nm(35),deleted:false});
+    state.memtable.set(uk(36),{value:nm(36),deleted:false});
+    state.memtable.set(uk(20),{value:nm(20)+" (atualizado)",deleted:false});
+    state.seq=44;
+    state.wal=[
+      {seq:42,op:"SET",key:uk(35),value:nm(35)},
+      {seq:43,op:"SET",key:uk(36),value:nm(36)},
+      {seq:44,op:"SET",key:uk(20),value:nm(20)+" (atualizado)"},
+    ];
+
+    clearTrace();
+    trace("Base carregada: 41 chaves — L1 consolidada (20) + 2 SSTables em L0 (18) + 3 escritas na memtable.","info");
+    trace("GET <b>user:012</b> → apagada por tombstone em L0 (mesmo existindo em L1).","info");
+    trace("GET <b>user:005</b> → versão atualizada vive em L0 e vence a de L1.","info");
+    trace("GET <b>user:015</b> → o bloom faz pular L0 e o valor é achado em L1.","info");
+    renderAll();
+  }
+
+  // ---------- eventos ----------
+  $("btnSet").onclick=doSet;
+  $("btnGet").onclick=doGet;
+  $("btnDel").onclick=doDelete;
+  $("btnFlush").onclick=()=>{ trace("FLUSH manual solicitado.","info"); flush(); };
+  $("btnCompact").onclick=()=>{ trace("COMPACTION manual solicitada.","info"); compact(); };
+  $("btnReset").onclick=seed;
+  $("thresh").oninput=e=>{ $("threshVal").textContent=e.target.value; };
+  $("keyIn").addEventListener("keydown",e=>{
+    if(e.key==="Enter"){ e.preventDefault();
+      if($("keyIn").value.trim().endsWith("?")){ $("keyIn").value=$("keyIn").value.trim().slice(0,-1); doGet(); }
+      else if($("valIn").value.trim()) doSet(); else $("valIn").focus();
+    }
+  });
+  $("valIn").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); doSet(); } });
+
+  // ============================================================
+  //  B-TREE
+  // ============================================================
+  let bt;
+  function btFresh(order){
+    return { root:{id:0,leaf:true,keys:[]}, maxKeys:order, height:1, pageCount:1,
+             nextId:1, writes:0, reads:0, keysInserted:0, busy:false };
+  }
+  function btTrace(msg,cls){
+    const el=$("btTrace");
+    const icons={write:"✎",split:"⇅",read:"→",hit:"✔",result:"»",info:"ℹ"};
+    const div=document.createElement("div"); div.className="tl "+(cls||"info");
+    div.innerHTML=`<span class="t-icon">${icons[cls]||"·"}</span> ${msg}`;
+    el.appendChild(div); el.scrollTop=el.scrollHeight;
+  }
+  const btClearTrace=()=>{ $("btTrace").innerHTML=""; };
+
+  // insere a chave; devolve {existed, touched:Set, splits:[]}
+  function btInsertKey(key){
+    const path=[]; let node=bt.root;
+    while(!node.leaf){ let i=0; while(i<node.keys.length && key>node.keys[i]) i++; path.push(node); node=node.children[i]; }
+    if(node.keys.includes(key)) return {existed:true};
+    let i=0; while(i<node.keys.length && key>node.keys[i]) i++;
+    node.keys.splice(i,0,key);
+    bt.keysInserted++;
+    const touched=new Set([node.id]); const splits=[];
+    let cur=node, pIdx=path.length-1;
+    while(cur.keys.length>bt.maxKeys){
+      const mid=Math.floor(cur.keys.length/2);
+      const median=cur.keys[mid];
+      const right={id:bt.nextId++, leaf:cur.leaf, keys:cur.keys.slice(mid+1)};
+      if(!cur.leaf){ right.children=cur.children.slice(mid+1); cur.children=cur.children.slice(0,mid+1); }
+      cur.keys=cur.keys.slice(0,mid);
+      touched.add(cur.id); touched.add(right.id);
+      splits.push({median});
+      const parent=path[pIdx];
+      if(!parent){
+        bt.root={id:bt.nextId++, leaf:false, keys:[median], children:[cur,right]};
+        touched.add(bt.root.id); break;
+      }
+      let j=0; while(j<parent.keys.length && median>parent.keys[j]) j++;
+      parent.keys.splice(j,0,median);
+      parent.children.splice(j+1,0,right);
+      touched.add(parent.id);
+      cur=parent; pIdx--;
+    }
+    bt.writes+=touched.size;
+    return {existed:false, touched, splits};
+  }
+
+  function btSearchKey(key){
+    const path=[]; let node=bt.root;
+    while(node){ path.push(node);
+      if(node.keys.includes(key)) return {path, found:true, node};
+      if(node.leaf) return {path, found:false};
+      let i=0; while(i<node.keys.length && key>node.keys[i]) i++;
+      node=node.children[i];
+    }
+    return {path, found:false};
+  }
+
+  function btLayout(){
+    const leaves=[]; (function c(n){ n.leaf?leaves.push(n):n.children.forEach(c); })(bt.root);
+    const L=Math.max(1,leaves.length);
+    const availW=$("btCanvas").parentElement.clientWidth||760;
+    const slot=100, levelH=86;
+    const canvasW=Math.max(availW-4, L*slot);
+    const pos=new Map(); let leafIdx=0, maxDepth=0;
+    (function assign(n,depth){
+      maxDepth=Math.max(maxDepth,depth);
+      let x;
+      if(n.leaf){ x=(leafIdx+0.5)*(canvasW/L); leafIdx++; }
+      else { const xs=n.children.map(c=>assign(c,depth+1)); x=(xs[0]+xs[xs.length-1])/2; }
+      pos.set(n.id,{x, y:depth*levelH+12, node:n});
+      return x;
+    })(bt.root,0);
+    return {pos, canvasW, height:maxDepth*levelH+64, maxDepth};
+  }
+
+  function btRender(){
+    const {pos, canvasW, height, maxDepth}=btLayout();
+    bt.pageCount=pos.size; bt.height=maxDepth+1;
+    let lines="";
+    pos.forEach(p=>{ const n=p.node; if(!n.leaf) n.children.forEach(c=>{ const cp=pos.get(c.id);
+      lines+=`<path class="bt-line" d="M ${p.x} ${p.y+36} C ${p.x} ${p.y+64}, ${cp.x} ${cp.y-16}, ${cp.x} ${cp.y}"/>`; }); });
+    let nodes="";
+    pos.forEach(p=>{ const n=p.node;
+      const cells=n.keys.map(k=>`<span class="bt-cell" data-node="${n.id}" data-key="${k}">${esc(k)}</span>`).join("");
+      nodes+=`<div class="bt-node ${n.leaf?'leaf':''}" id="btn-${n.id}" style="left:${p.x}px;top:${p.y}px">${cells}</div>`;
+    });
+    const c=$("btCanvas");
+    c.style.width=canvasW+"px"; c.style.height=height+"px";
+    c.innerHTML=`<svg class="bt-svg" width="${canvasW}" height="${height}" viewBox="0 0 ${canvasW} ${height}">${lines}</svg>`+nodes;
+    $("btHeight").textContent=bt.height; $("btPages").textContent=bt.pageCount;
+  }
+
+  function btClearHi(){
+    document.querySelectorAll(".bt-node").forEach(n=>n.classList.remove("path","hitnode","splitting"));
+    document.querySelectorAll(".bt-cell").forEach(cc=>cc.classList.remove("hitkey","median"));
+  }
+  function btSync(){ ["btInsert","btSearch","btRandom","btResetBtn","btOrder"].forEach(id=>{const e=$(id); if(e) e.disabled=bt.busy;}); }
+
+  async function doBtInsert(){
+    if(bt.busy) return;
+    const raw=$("btKey").value.trim(), key=parseInt(raw,10);
+    if(raw===""||isNaN(key)){ shake("btKey"); return; }
+    bt.busy=true; btSync();
+    const sr=btSearchKey(key);
+    for(const n of sr.path){ const el=$("btn-"+n.id); if(el){ el.classList.add("path"); await sleep(280); } }
+    if(sr.found){ btTrace(`INSERT ${key}: já existe (chave única) — nada a fazer`,"info"); await sleep(200); btClearHi(); bt.busy=false; btSync(); return; }
+    const res=btInsertKey(key);
+    btTrace(`INSERT ${key}: escreve na folha <b>in-place</b>`+(res.splits.length?` → página estourou`:``),res.splits.length?"split":"write");
+    res.splits.forEach(s=>btTrace(`split: a chave do meio (${s.median}) sobe para o pai`,"split"));
+    btTrace(`páginas reescritas nesta operação: <b>${res.touched.size}</b>`,"info");
+    btRender();
+    res.touched.forEach(id=>{ const el=$("btn-"+id); if(el) el.classList.add(res.splits.length?"splitting":"hitnode"); });
+    $("btWrites").textContent=bt.writes;
+    await sleep(520); btClearHi(); bt.busy=false; btSync(); $("btKey").value="";
+  }
+
+  async function doBtSearch(){
+    if(bt.busy) return;
+    const raw=$("btKey").value.trim(), key=parseInt(raw,10);
+    if(raw===""||isNaN(key)){ shake("btKey"); return; }
+    bt.busy=true; btSync(); btClearTrace();
+    btTrace(`SEARCH ${key}: um único caminho, da raiz até a folha`,"info");
+    const sr=btSearchKey(key); let reads=0;
+    for(const n of sr.path){ const el=$("btn-"+n.id); reads++;
+      if(el) el.classList.add("path");
+      btTrace(`lê página #${n.id} [${n.keys.join(", ")||"—"}]`,"read");
+      await sleep(430);
+    }
+    bt.reads=reads; $("btReads").textContent=reads;
+    if(sr.found){
+      const cell=document.querySelector(`.bt-cell[data-node="${sr.node.id}"][data-key="${key}"]`);
+      if(cell) cell.classList.add("hitkey");
+      const el=$("btn-"+sr.node.id); if(el){ el.classList.remove("path"); el.classList.add("hitnode"); }
+      btTrace(`RESULTADO: <b>${key} encontrado</b> · ${reads} página(s) lida(s) = altura da árvore`,"result");
+    } else btTrace(`RESULTADO: <b>${key} não existe</b> · ${reads} página(s) lida(s)`,"result");
+    await sleep(420); btClearHi(); bt.busy=false; btSync();
+  }
+
+  function btRandomInsert(){
+    if(bt.busy) return;
+    const used=new Set(); (function c(n){ n.keys.forEach(k=>used.add(k)); if(!n.leaf) n.children.forEach(c); })(bt.root);
+    let added=0, guard=0;
+    while(added<8 && guard<400){ guard++; const k=1+Math.floor(Math.random()*99); if(used.has(k)) continue; used.add(k); btInsertKey(k); added++; }
+    btTrace(`inseridas ${added} chaves aleatórias (${bt.writes} páginas reescritas no total)`,"write");
+    $("btWrites").textContent=bt.writes;
+    btRender();
+  }
+
+  function btReset(){
+    bt=btFresh(+$("btOrder").value);
+    [50,20,70,10,30,60,90,40,80].forEach(k=>btInsertKey(k));
+    bt.writes=0; bt.keysInserted=0; bt.reads=0; // contadores medem sua atividade a partir daqui
+    btClearTrace();
+    btTrace(`Árvore inicial · máx. ${bt.maxKeys} chaves por página.`,"info");
+    btTrace(`SEARCH 30 → caminho curto raiz→folha. INSERT 35 → observe um split.`,"info");
+    btRender();
+    $("btWrites").textContent="0"; $("btReads").textContent="0";
+  }
+
+  $("btInsert").onclick=doBtInsert;
+  $("btSearch").onclick=doBtSearch;
+  $("btRandom").onclick=btRandomInsert;
+  $("btResetBtn").onclick=btReset;
+  $("btOrder").oninput=e=>{ $("btOrderVal").textContent=e.target.value; btReset(); };
+  $("btKey").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); doBtInsert(); } });
+
+  // ============================================================
+  //  ABAS + COMPARAÇÃO
+  // ============================================================
+  function updateCompare(){
+    $("cmpBtKeys").textContent=bt.keysInserted;
+    $("cmpBtWrites").textContent=bt.writes;
+    $("cmpBtAmp").textContent=bt.keysInserted?(bt.writes/bt.keysInserted).toFixed(1)+"×":"—";
+    $("cmpLsmOps").textContent=state.logicalOps;
+    $("cmpLsmWrites").textContent=state.physWrites;
+    $("cmpLsmAmp").textContent=state.logicalOps?(state.physWrites/state.logicalOps).toFixed(1)+"×":"—";
+  }
+  $("cmpRefresh").onclick=updateCompare;
+
+  function showView(v){
+    document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.view===v));
+    document.querySelectorAll(".view").forEach(s=>s.classList.add("hidden"));
+    $("view-"+v).classList.remove("hidden");
+    if(v==="compare") updateCompare();
+    if(v==="btree") btRender();
+  }
+  document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>showView(t.dataset.view));
+  window.addEventListener("resize",()=>{ if(!$("view-btree").classList.contains("hidden")) btRender(); });
+
+  // ============================================================
+  //  LINHA × COLUNA (OLTP / OLAP)
+  // ============================================================
+  const AN_COLS=[
+    {key:'id',label:'id',hue:210},{key:'data',label:'data',hue:265},
+    {key:'produto',label:'produto',hue:150},{key:'regiao',label:'região',hue:32},
+    {key:'canal',label:'canal',hue:340},{key:'qtd',label:'qtd',hue:190},
+    {key:'preco',label:'preço',hue:95},
+  ];
+  const AN_PRECO={Camiseta:79,Caneca:39,'Boné':59};
+  const AN_ROWS=(function(){
+    const p=['Camiseta','Caneca','Boné'], r=['SP','RJ','MG','RS'], c=['app','web','loja'];
+    const spec=[[0,0,0,3,2],[1,1,1,3,1],[2,2,2,4,3],[0,3,0,5,1],[1,0,1,5,4],
+      [2,1,0,6,2],[0,2,2,7,1],[1,3,1,8,2],[2,0,0,9,5],[0,1,1,10,1],
+      [1,2,2,11,3],[2,3,0,12,2],[0,0,1,13,4],[1,1,0,14,1]];
+    return spec.map((s,i)=>({ id:i+1, data:`${String(s[3]).padStart(2,'0')}/03`,
+      produto:p[s[0]], regiao:r[s[1]], canal:c[s[2]], qtd:s[4], preco:AN_PRECO[p[s[0]]] }));
+  })();
+  const anDistinct=key=>new Set(AN_ROWS.map(r=>r[key])).size;
+  const anTint=hue=>`background:hsla(${hue},60%,52%,.16);border:1px solid hsla(${hue},60%,52%,.38)`;
+
+  function anRender(){
+    $("rowTape").innerHTML=AN_ROWS.map((row,ri)=>{
+      const cells=AN_COLS.map(col=>`<span class="cs-cell" data-r="${ri}" data-c="${col.key}" style="${anTint(col.hue)}">${esc(row[col.key])}</span>`).join("");
+      return `<span class="cs-rowgroup"><span class="cs-rowtag">#${row.id}</span>${cells}</span>`;
+    }).join("");
+    $("colStrips").innerHTML=AN_COLS.map(col=>{
+      const d=anDistinct(col.key), n=AN_ROWS.length, compressible=d<=n/2;
+      const badge=compressible?`<span class="cs-badge">RLE ${n}→${d}</span>`:`<span class="cs-badge none">${d} distintos</span>`;
+      const cells=AN_ROWS.map((row,ri)=>`<span class="cs-cell" data-r="${ri}" data-c="${col.key}" style="${anTint(col.hue)}">${esc(row[col.key])}</span>`).join("");
+      return `<div class="cs-colstrip"><div class="cs-colhead">${esc(col.label)}</div>${badge}${cells}</div>`;
+    }).join("");
+  }
+  function anApply(rowPred,colPred){
+    document.querySelectorAll("#rowTape .cs-cell").forEach(c=>{ const ok=rowPred(+c.dataset.r,c.dataset.c); c.classList.toggle("read",ok); c.classList.toggle("dim",!ok); });
+    document.querySelectorAll("#colStrips .cs-cell").forEach(c=>{ const ok=colPred(+c.dataset.r,c.dataset.c); c.classList.toggle("read",ok); c.classList.toggle("dim",!ok); });
+  }
+  function anOltp(){
+    const rid=6, nCols=AN_COLS.length; // pedido #7
+    anApply((r)=>r===rid,(r)=>r===rid);
+    $("csRowCount").innerHTML=`células: <b>${nCols}</b> · 1 bloco contíguo`;
+    $("csColCount").innerHTML=`células: <b>${nCols}</b> · ${nCols} blocos separados`;
+    const v=$("anVerdict"); v.className="cs-verdict win-row";
+    v.innerHTML=`<b>OLTP — pegar o pedido #7 inteiro.</b> Por linha: 1 leitura sequencial do bloco do registro. Por coluna: os mesmos ${nCols} valores, mas espalhados por ${nCols} blocos de coluna (${nCols} seeks). <b>Vantagem: por linha.</b>`;
+  }
+  function anOlap(){
+    const need=new Set(['produto','qtd','preco']), n=AN_ROWS.length, all=AN_COLS.length;
+    anApply(()=>true,(r,c)=>need.has(c));
+    $("csRowCount").innerHTML=`células: <b>${n*all}</b> · varredura total`;
+    $("csColCount").innerHTML=`células: <b>${n*need.size}</b> · só ${need.size} colunas`;
+    const v=$("anVerdict"); v.className="cs-verdict win-col";
+    v.innerHTML=`<b>OLAP — receita por produto (usa produto, qtd, preço).</b> Por linha: lê os ${n} registros inteiros = ${n*all} células e descarta ${n*(all-need.size)}. Por coluna: lê só ${need.size} colunas = ${n*need.size} células. <b>Vantagem: por coluna (${(all/need.size).toFixed(1)}× menos I/O).</b>`;
+  }
+  function anClear(){
+    document.querySelectorAll("#view-analytics .cs-cell").forEach(c=>c.classList.remove("read","dim"));
+    $("csRowCount").innerHTML='células lidas: <b>—</b>'; $("csColCount").innerHTML='células lidas: <b>—</b>';
+    $("anVerdict").className="cs-verdict";
+    $("anVerdict").innerHTML='Escolha uma consulta acima. <b>OLTP</b> = pega/atualiza um registro inteiro. <b>OLAP</b> = agrega poucas colunas sobre milhões de linhas.';
+  }
+  $("anOltp").onclick=anOltp; $("anOlap").onclick=anOlap; $("anClear").onclick=anClear;
+
+  seed();
+  btReset();
+  anRender();
+  showView("lsm");
+})();
+</script>

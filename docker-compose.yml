@@ -1,0 +1,8 @@
+services:
+  storage-sim:
+    build: .
+    image: storage-sim
+    container_name: storage-sim
+    ports:
+      - "8080:80"
+    restart: unless-stopped
